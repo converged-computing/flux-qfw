@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flux-qfw"
+version = "0.0.0"
+description = "QFw quantum resources as Fluxion resources: a Flux CLI plugin, a job shell plugin, and the QPM reservation client that replaces the qfw-slurm layer"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+# The flux python bindings come from the flux-core install, not from PyPI.
+# The DEFw backend additionally needs the QFw venv (defw, api_qpm_common).
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/converged-computing/flux-qfw"
+
+[project.scripts]
+flux-qfw = "flux_qfw.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["flux_qfw*"]
+
+[tool.setuptools.package-data]
+flux_qfw = ["flux_plugins/*.lua"]
