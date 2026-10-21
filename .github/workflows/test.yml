@@ -1,0 +1,77 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run unit tests (no flux needed)
+        run: python3 -m unittest discover -s test -p 'test_*.py' -v
+
+      - name: Byte-compile the python sources
+        run: python3 -m compileall flux_qfw cli-plugins
+
+      - name: Install lua5.4 (provides luac5.4)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4
+
+      - name: Check the flux-qfw.lua shell plugin syntax
+        run: luac5.4 -p flux_qfw/flux_plugins/flux-qfw.lua
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    container:
+      image: fluxrm/flux-core:noble
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flux-sched build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            libboost-dev libboost-graph-dev libedit-dev libhwloc-dev \
+            libyaml-cpp-dev python3-yaml python3-jsonschema \
+            ninja-build cmake jq
+
+      # flux-sched reads its version from flux-sched.ver, or else runs git
+      # describe in the directory cmake starts from, which here is this repo.
+      # So we write flux-sched.ver from git describe inside the clone. The
+      # clone needs full history to reach the last tag.
+      - name: Clone flux-sched (hold branch, with the coschedule policy)
+        run: |
+          git config --global --add safe.directory '*'
+          git clone --branch "${{ vars.FLUX_SCHED_REF || 'hold' }}" \
+            https://github.com/vsoch/flux-sched.git flux-sched
+          git -C flux-sched describe --always | sed 's/^v//' > flux-sched/flux-sched.ver
+          cat flux-sched/flux-sched.ver
+
+      - name: Build and install flux-sched
+        run: |
+          cmake -S flux-sched -B flux-sched/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_INSTALL_SYSCONFDIR=/etc \
+            -DCMAKE_INSTALL_LOCALSTATEDIR=/var
+          ninja -C flux-sched/build
+          ninja -C flux-sched/build install
+
+      - name: Check that Fluxion installed
+        run: |
+          test -f /usr/lib/flux/modules/sched-fluxion-qmanager.so
+          test -f /etc/flux/modprobe/modprobe.d/fluxion.toml
+          flux ion-R --help >/dev/null
+
+      - name: Run make test (unit + t/t000*.sh under flux start)
+        run: make test

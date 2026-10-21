@@ -22,7 +22,7 @@ Either way the device is a vertex in the graph and Fluxion decides who has it. T
 | CLI plugin | `cli-plugins/qfw.py`, `flux_qfw/cli_plugin.py` | Adds the `--qfw-*` options to `flux run`, `submit`, `batch` and `alloc`. Adds the device to the job's resources, or submits the scout pair for an external queue. |
 | Shell plugin | `flux_qfw/flux_plugins/flux-qfw.lua` | Runs in every job shell. Exports what the tasks need, like `QFW_RESERVATIONS` or the simulator hosts. |
 | Scout | `flux_qfw/scout.py` | The program the scout job runs. Opens the vendor session and releases the user's job when it is ready. |
-| Helper | `flux-qfw` | Command line tool with `devices`, `add`, `sessions`, `scout`, `reserve`, `release`, `memo`, `granted`, `status` and `plugins`. |
+| Helper | `flux-qfw` | Command line tool with `devices`, `add`, `sessions`, `scout`, `register`, `unregister`, `memo`, `granted`, `status` and `plugins`. |
 | Backends | `flux_qfw/qpm/` | `defw` talks to a real QPM. `mock` keeps reservations and sessions in small files for testing. |
 
 ## The resource shape
@@ -67,7 +67,7 @@ There are two kinds.
 
 **Job scope.** This is for a simulator. The job runs the simulator itself on its own nodes, so there is nothing to reserve. Every rank gets `QFW_QPU_SCOPE=job`, the job's hosts in `QFW_SIMULATOR_NODES`, and a launch agent so the MPI runtime starts its daemons with `flux exec` instead of ssh. QFw then runs exactly as it would on a workstation.
 
-**Site scope.** This is for a QPM the site runs as a service. The job shell reserves the QPM when the job starts and releases it when the job ends, even if the task fails. The device is already the job's in the graph, so this is bookkeeping for the QPM. Inside the job, `QFW_RESERVATIONS` looks like `[["shim-ornl-20q","<id>"]]`, which is the format QFw's `qfw-srun` uses.
+**Site scope.** This is for a QPM the site runs as a service. The job already holds the device in the graph, so the shell does not acquire anything. When the job starts it registers the job with the QPM, and when the job ends it unregisters it, even if the task fails. The QPM hands back the reservation id QFw needs. If the QPM refuses a job Fluxion already granted, the job fails with a message to set the QPM's admission policy to `unlimited`. Inside the job, `QFW_RESERVATIONS` looks like `[["shim-ornl-20q","<id>"]]`, which is the format QFw's `qfw-srun` uses.
 
 ## Devices behind a vendor queue
 
@@ -134,7 +134,7 @@ These are the options. They match what qfw-slurm's `salloc --qpu` took.
 | `--qfw-scope` | Override the device's scope, `job` or `site` |
 | `--qfw-queue` | Override the device's queue, `owned` or `external` |
 | `--qfw-backend` | `defw` (default) or `mock` |
-| `--qfw-no-reserve` | Schedule the device but do not call the QPM |
+| `--qfw-no-reserve` | Schedule the device but do not tell the QPM |
 
 Fluxion never reads the size options. Its job is to decide who holds the device. Whether the work fits on the device is the QPM's call. The helper runs with the environment you submitted from. For the `defw` backend, activate QFw with `qfw-activate` first so it can find the venv and `QFW_SITE_CONFIG`.
 
