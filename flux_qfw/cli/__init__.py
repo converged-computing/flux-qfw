@@ -49,7 +49,7 @@ def cmd_register(args):
     """
     envelope = Envelope.from_attr(json.loads(args.envelope))
     job = JobIdentity(
-        jobid=int(args.jobid),
+        jobid=int(flux.job.JobID(args.jobid)),
         userid=int(args.userid),
         username=args.username,
         cluster=args.cluster,
@@ -81,8 +81,9 @@ def cmd_granted(args):
 
 def cmd_devices(args):
     doc = _read_json(args.r) if args.r else instance.load_instance_graph()
+    qubits = resources.device_qubits(doc)
     for sid, count in sorted(resources.devices_in(doc).items()):
-        print("{} qpus={}".format(sid, count))
+        print("{} qpus={} qubits={}".format(sid, count, qubits.get(sid) or "none"))
 
 
 def cmd_memo(args):
@@ -137,10 +138,7 @@ def cmd_memo(args):
 
 def cmd_add(args):
     """Add devices to a running instance, or with --r to an R file."""
-    specs = []
-    for item in args.qpu:
-        sid, _, count = item.partition("=")
-        specs.append((sid, int(count) if count else 1))
+    specs = [resources.parse_spec(item) for item in args.qpu]
     if args.r is None:
         added = instance.add_devices(specs)
         print("added: {}".format(", ".join(added) or "nothing (already present)"))
@@ -160,9 +158,7 @@ def cmd_add(args):
 
 
 def cmd_scout(args):
-    return scout.scout(
-        partner=args.partner, poll_s=args.poll, partner_timeout_s=args.partner_timeout
-    )
+    return scout.scout(partner=args.partner, poll_s=args.poll)
 
 
 def cmd_sessions(args):
@@ -259,22 +255,20 @@ def main(argv=None):
         help="add to this R or graph file instead of the running instance, - for stdin",
     )
     a.add_argument("--output", help="with --r, write the result here instead of stdout")
-    a.add_argument("qpu", nargs="+", help="SERVICE_ID or SERVICE_ID=QPU_COUNT")
+    a.add_argument(
+        "qpu",
+        nargs="+",
+        help="SERVICE_ID[=QPUS][:QUBITS], like fake-iqm=2:20; both default to 1",
+    )
     a.set_defaults(func=cmd_add)
 
     sc = sub.add_parser("scout")
     sc.add_argument(
         "--partner",
-        help="the held job to serve, default the one whose qfw.scout names this job",
+        help="the held job to serve, default the qfw.partner in this job's jobspec",
     )
     sc.add_argument(
         "--poll", type=float, default=2.0, help="seconds between checks, default 2"
-    )
-    sc.add_argument(
-        "--partner-timeout",
-        type=float,
-        default=60,
-        help="seconds to wait for the partner to show up, default 60",
     )
     sc.set_defaults(func=cmd_scout)
 
